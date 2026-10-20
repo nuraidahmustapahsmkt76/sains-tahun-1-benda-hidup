@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Gesture Catch Game - Sains Tahun 1</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Fredoka / Quicksand for playful child-friendly look -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
+            color: #ffffff;
+            user-select: none;
+            overflow-x: hidden;
+        }
+        h1, h2, h3, .font-fun {
+            font-family: 'Fredoka', cursive;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .arcade-btn {
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 6px 0 rgba(0,0,0,0.3);
+        }
+        .arcade-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 0 rgba(0,0,0,0.3);
+        }
+        .arcade-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 rgba(0,0,0,0.3);
+        }
+        canvas {
+            border-radius: 1.5rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+    </style>
+
+    <!-- Import MediaPipe Tasks Vision Bundle via CDN -->
+    <script type="module">
+        import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+        window.HandLandmarker = HandLandmarker;
+        window.FilesetResolver = FilesetResolver;
+    </script>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-2 md:p-6">
+
+    <!-- Header Section -->
+    <header class="max-w-6xl w-full mx-auto flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-2xl bg-yellow-400 text-slate-900 flex items-center justify-center text-2xl font-bold shadow-lg transform -rotate-6">
+                <i class="fa-solid fa-hand-holding-heart"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold text-yellow-300 tracking-wide drop-shadow-md">
+                    TANGKAP BENDA HIDUP!
+                </h1>
+                <p class="text-xs md:text-sm text-indigo-200 font-semibold">
+                    Sains Tahun 1: Benda Hidup vs Benda Bukan Hidup
+                </p>
+            </div>
+        </div>
+
+        <!-- Camera Status Indicator & Controls -->
+        <div class="flex items-center gap-3 glass-card px-4 py-2 rounded-full">
+            <span id="camStatusDot" class="w-3.5 h-3.5 rounded-full bg-red-500 animate-pulse"></span>
+            <span id="camStatusText" class="text-xs md:text-sm font-semibold text-slate-200">Kamera Mungkir/Mati</span>
+            <button id="btnToggleMode" class="ml-2 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-full transition">
+                <i class="fa-solid fa-keyboard mr-1"></i> Mod Papan Kekunci
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Container -->
+    <main class="max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        
+        <!-- Left Panel: Instructions, Preview & Calibration -->
+        <section class="lg:col-span-1 flex flex-col gap-4">
+            
+            <!-- Camera / Hand Preview -->
+            <div class="glass-card p-4 rounded-3xl flex flex-col items-center relative overflow-hidden">
+                <h3 class="text-sm font-bold text-yellow-300 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-camera"></i> Pratonton Kamera
+                </h3>
+
+                <div class="relative w-full aspect-video bg-black/40 rounded-xl overflow-hidden border-2 border-indigo-400/30">
+                    <!-- Video Output (Hidden directly, used as stream source) -->
+                    <video id="webcam" class="hidden" autoplay playsinline muted></video>
+                    <!-- Small Canvas Preview for Hand Overlay -->
+                    <canvas id="previewCanvas" class="w-full h-full object-cover transform -scale-x-100"></canvas>
+                    
+                    <div id="camOverlayNotice" class="absolute inset-0 flex flex-col items-center justify-center p-3 text-center bg-slate-900/90 text-xs">
+                        <i class="fa-solid fa-video-slash text-2xl text-red-400 mb-2"></i>
+                        <p id="camNoticeMsg">Sila aktifkan kamera untuk mengawal permainan secara bebas!</p>
+                        <button id="btnStartCam" class="mt-3 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-extrabold text-xs px-4 py-2 rounded-xl arcade-btn">
+                            <i class="fa-solid fa-power-off mr-1"></i> Aktifkan Kamera
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Hand Tracking Gauge -->
+                <div class="w-full mt-3">
+                    <div class="flex justify-between text-xs text-indigo-200 font-semibold mb-1">
+                        <span>Status Kawalan Tangan</span>
+                        <span id="handPosLabel">Mencari...</span>
+                    </div>
+                    <div class="w-full bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                        <div id="handPosBar" class="bg-yellow-400 h-full w-0 transition-all duration-75"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- How To Play Instructions -->
+            <div class="glass-card p-4 rounded-3xl">
+                <h3 class="text-sm font-bold text-yellow-300 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-info"></i> Arahan Permainan
+                </h3>
+                <ul class="text-xs text-indigo-100 space-y-2 leading-relaxed">
+                    <li class="flex items-start gap-2">
+                        <span class="bg-yellow-400/20 text-yellow-300 font-bold px-1.5 py-0.5 rounded">1</span>
+                        <span>Tangkap **Benda Hidup** (Haiwan, Tumbuhan, Manusia) untuk <strong>+10 mata</strong>!</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="bg-red-400/20 text-red-300 font-bold px-1.5 py-0.5 rounded">2</span>
+                        <span>Elak **Benda Bukan Hidup** (Batu, Kereta, Kerusi)! Nyawa berkurang jika tersilap.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="bg-indigo-400/20 text-indigo-300 font-bold px-1.5 py-0.5 rounded">3</span>
+                        <span>Gerakkan tangan **Kiri/Kanan** di hadapan kamera untuk menggerakkan bakul.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="bg-emerald-400/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded">4</span>
+                        <span>Alternatif: Gunakan Kekunci **Panah Kiri / Kanan** [←] [→] atau [A] [D].</span>
+                    </li>
+                </ul>
+            </div>
+            
+            <div id="httpWarning" class="hidden bg-amber-500/20 border border-amber-400/50 p-3 rounded-2xl text-xs text-amber-200">
+                <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1"></i>
+                <strong>Nota HTTPS:</strong> Jika kamera disekat oleh pelayar, pastikan pautan dijalankan melalui domain selamat (HTTPS) atau `localhost`.
+            </div>
+
+        </section>
+
+        <!-- Center/Right Panel: Main Game Canvas -->
+        <section class="lg:col-span-3 flex flex-col items-center">
+            
+            <!-- Dashboard Stats HUD -->
+            <div class="w-full glass-card rounded-2xl p-4 mb-4 flex flex-wrap items-center justify-between gap-3">
+                <!-- Target Mission Banner -->
+                <div class="flex items-center gap-2 bg-indigo-900/60 px-3 py-1.5 rounded-xl border border-indigo-400/30">
+                    <span class="text-xs text-indigo-300 uppercase font-bold tracking-wider">Misi:</span>
+                    <span id="targetRule" class="text-sm font-extrabold text-emerald-300 flex items-center gap-1">
+                        <i class="fa-solid fa-leaf"></i> Tangkap Benda Hidup
+                    </span>
+                </div>
+
+                <!-- Game Stats -->
+                <div class="flex items-center gap-6">
+                    <!-- Score -->
+                    <div class="text-center">
+                        <p class="text-[10px] uppercase font-bold text-indigo-200 tracking-wider">Skor</p>
+                        <p id="uiScore" class="text-2xl font-extrabold text-yellow-300 leading-none">0</p>
+                    </div>
+
+                    <!-- Lives -->
+                    <div class="text-center">
+                        <p class="text-[10px] uppercase font-bold text-indigo-200 tracking-wider">Nyawa</p>
+                        <div id="uiLives" class="flex gap-1 text-red-400 text-lg">
+                            <i class="fa-solid fa-heart"></i>
+                            <i class="fa-solid fa-heart"></i>
+                            <i class="fa-solid fa-heart"></i>
+                        </div>
+                    </div>
+
+                    <!-- Difficulty -->
+                    <div class="text-center">
+                        <p class="text-[10px] uppercase font-bold text-indigo-200 tracking-wider">Tahap</p>
+                        <span id="uiDifficulty" class="text-xs font-bold bg-yellow-400 text-slate-900 px-2 py-0.5 rounded-full">Mudah</span>
+                    </div>
+
+                    <!-- Timer -->
+                    <div class="text-center">
+                        <p class="text-[10px] uppercase font-bold text-indigo-200 tracking-wider">Masa</p>
+                        <p id="uiTime" class="text-2xl font-extrabold text-cyan-300 leading-none">60s</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Canvas Container with Overlay HUD for States -->
+            <div class="relative w-full aspect-[4/3] max-w-[800px] flex items-center justify-center">
+                
+                <!-- Game Canvas -->
+                <canvas id="gameCanvas" width="800" height="600" class="w-full h-full bg-slate-900/90"></canvas>
+
+                <!-- Overlay 1: Start Screen -->
+                <div id="screenStart" class="absolute inset-0 bg-slate-950/80 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center p-6 text-center z-10">
+                    <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-yellow-400 to-amber-500 text-slate-900 flex items-center justify-center text-4xl font-bold mb-4 shadow-xl transform rotate-3">
+                        <i class="fa-solid fa-gamepad"></i>
+                    </div>
+                    <h2 class="text-3xl md:text-4xl font-extrabold text-yellow-300 mb-2">HAND GESTURE CATCH</h2>
+                    <p class="text-sm md:text-base text-indigo-200 max-w-md mb-6">
+                        Bantu bakul menangkap **Benda Hidup** untuk markah tinggi! Pilih tahap kesukaran untuk memulakan.
+                    </p>
+
+                    <!-- Difficulty Selector -->
+                    <div class="flex items-center gap-3 mb-6">
+                        <button class="btn-diff px-4 py-2 rounded-xl text-xs font-bold border-2 border-indigo-400/40 bg-indigo-800/40 hover:bg-indigo-700 transition" data-diff="1">
+                            Mudah (Pelan)
+                        </button>
+                        <button class="btn-diff px-4 py-2 rounded-xl text-xs font-bold border-2 border-yellow-400 bg-yellow-400 text-slate-900 shadow-md" data-diff="2">
+                            Sederhana
+                        </button>
+                        <button class="btn-diff px-4 py-2 rounded-xl text-xs font-bold border-2 border-indigo-400/40 bg-indigo-800/40 hover:bg-indigo-700 transition" data-diff="3">
+                            Sukar (Pantas)
+                        </button>
+                    </div>
+
+                    <button id="btnPlayGame" class="arcade-btn bg-emerald-400 hover:bg-emerald-300 text-slate-900 font-extrabold text-lg px-8 py-3 rounded-2xl flex items-center gap-2 shadow-lg">
+                        <i class="fa-solid fa-play"></i> MULA PERMAINAN
+                    </button>
+                </div>
+
+                <!-- Overlay 2: Game Over Screen -->
+                <div id="screenGameOver" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md rounded-3xl flex flex-col items-center justify-center p-6 text-center z-20">
+                    <div class="w-20 h-20 rounded-3xl bg-red-500/20 text-red-400 border border-red-500/40 flex items-center justify-center text-4xl font-bold mb-3">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+                    <h2 id="gameOverTitle" class="text-3xl font-extrabold text-white mb-1">TAMAT PERMAINAN!</h2>
+                    <p id="gameOverSub" class="text-sm text-indigo-200 mb-4">Masa telah tamat!</p>
+
+                    <div class="glass-card px-6 py-4 rounded-2xl mb-6 w-64">
+                        <p class="text-xs text-indigo-300 font-bold uppercase tracking-wider mb-1">Skor Akhir Anda</p>
+                        <p id="finalScore" class="text-4xl font-extrabold text-yellow-300">0</p>
+                    </div>
+
+                    <div class="flex gap-4">
+                        <button id="btnRestartGame" class="arcade-btn bg-yellow-400 hover:bg-yellow-300 text-slate-900 font-extrabold text-base px-6 py-3 rounded-2xl flex items-center gap-2">
+                            <i class="fa-solid fa-rotate-right"></i> Main Lagi
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Floating Feedback Popups in Game -->
+                <div id="feedbackToast" class="pointer-events-none absolute top-10 left-1/2 transform -translate-x-1/2 opacity-0 transition-all duration-300 scale-75 font-extrabold text-xl px-6 py-2 rounded-2xl shadow-xl z-10">
+                    +10 BETUL!
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <footer class="max-w-6xl w-full mx-auto mt-6 text-center text-xs text-indigo-300/60 py-2 border-t border-indigo-500/20">
+        Hand Gesture Catch Game &copy; 2026 Modul Sains Tahun 1 | Kuasa Pemprosesan AI: MediaPipe Vision Tasks
+    </footer>
+
+    <script>
+        /* ===================================================================
+           1. AUDIO SYNTHESIZER (Web Audio API - Synthesized Sounds)
+           =================================================================== */
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playCatchGood() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, this.ctx.currentTime); // C5
+                osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.15); // A5
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+            playCatchBad() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(90, this.ctx.currentTime + 0.25);
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+            playGameOver() {
+                if (!this.ctx) return;
+                const notes = [300, 250, 200, 150];
+                notes.forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime + i * 0.1);
+                    gain.gain.setValueAtTime(0.3, this.ctx.currentTime + i * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + (i + 1) * 0.1);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + i * 0.1);
+                    osc.stop(this.ctx.currentTime + (i + 1) * 0.1);
+                });
+            }
+        }
+        const sfx = new SoundFX();
+
+        /* ===================================================================
+           2. EDUCATIONAL DATASET (Sains Tahun 1)
+           =================================================================== */
+        const ITEMS_DATABASE = [
+            // BENDA HIDUP (Living Things)
+            { name: 'Kucing', category: 'HIDUP', icon: '🐱', color: '#f59e0b' },
+            { name: 'Pokok', category: 'HIDUP', icon: '🌳', color: '#10b981' },
+            { name: 'Bunga', category: 'HIDUP', icon: '🌻', color: '#eab308' },
+            { name: 'Ikan', category: 'HIDUP', icon: '🐟', color: '#06b6d4' },
+            { name: 'Burung', category: 'HIDUP', icon: '🐦', color: '#3b82f6' },
+            { name: 'Budak', category: 'HIDUP', icon: '👦', color: '#ec4899' },
+            { name: 'Kupu-kupu', category: 'HIDUP', icon: '🦋', color: '#a855f7' },
+            
+            // BENDA BUKAN HIDUP (Non-Living Things)
+            { name: 'Kereta', category: 'BUKAN_HIDUP', icon: '🚗', color: '#ef4444' },
+            { name: 'Kerusi', category: 'BUKAN_HIDUP', icon: '🪑', color: '#8b5cf6' },
+            { name: 'Batu', category: 'BUKAN_HIDUP', icon: '🪨', color: '#64748b' },
+            { name: 'Bola', category: 'BUKAN_HIDUP', icon: '⚽', color: '#f97316' },
+            { name: 'Buku', category: 'BUKAN_HIDUP', icon: '📚', color: '#0284c7' },
+            { name: 'Rumah', category: 'BUKAN_HIDUP', icon: '🏠', color: '#d97706' },
+            { name: 'Telefon', category: 'BUKAN_HIDUP', icon: '📱', color: '#475569' }
+        ];
+
+        /* ===================================================================
+           3. GLOBAL STATE & CONFIG
+           =================================================================== */
+        const state = {
+            isCameraMode: true,
+            handLandmarker: null,
+            webcamRunning: false,
+            lastVideoTime: -1,
+            handXRatio: 0.5, // 0.0 (left) to 1.0 (right)
+            isHandDetected: false,
+            
+            // Game State
+            gameActive: false,
+            score: 0,
+            lives: 3,
+            timeRemaining: 60,
+            difficulty: 2, // 1: Easy, 2: Med, 3: Hard
+            targetType: 'HIDUP', // Main Rule
+            
+            // Canvas entities
+            basket: {
+                x: 400,
+                y: 520,
+                width: 120,
+                height: 50,
+                speed: 10
+            },
+            fallingItems: [],
+            particles: [],
+            
+            // Input keys for Keyboard Fallback
+            keys: {
+                Left: false,
+                Right: false
+            }
+        };
+
+        // DOM Element References
+        const video = document.getElementById('webcam');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const previewCtx = previewCanvas.getContext('2d');
+        const gameCanvas = document.getElementById('gameCanvas');
+        const gameCtx = gameCanvas.getContext('2d');
+        
+        const camStatusDot = document.getElementById('camStatusDot');
+        const camStatusText = document.getElementById('camStatusText');
+        const camOverlayNotice = document.getElementById('camOverlayNotice');
+        const camNoticeMsg = document.getElementById('camNoticeMsg');
+        const btnStartCam = document.getElementById('btnStartCam');
+        const btnToggleMode = document.getElementById('btnToggleMode');
+        const handPosBar = document.getElementById('handPosBar');
+        const handPosLabel = document.getElementById('handPosLabel');
+        
+        const uiScore = document.getElementById('uiScore');
+        const uiLives = document.getElementById('uiLives');
+        const uiTime = document.getElementById('uiTime');
+        const uiDifficulty = document.getElementById('uiDifficulty');
+        
+        const screenStart = document.getElementById('screenStart');
+        const screenGameOver = document.getElementById('screenGameOver');
+        const btnPlayGame = document.getElementById('btnPlayGame');
+        const btnRestartGame = document.getElementById('btnRestartGame');
+        const feedbackToast = document.getElementById('feedbackToast');
+
+        /* Check HTTPS Warning */
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+            document.getElementById('httpWarning').classList.remove('hidden');
+        }
+
+        /* ===================================================================
+           4. MEDIAPIPE VISION LANDMARKER SETUP
+           =================================================================== */
+        async function initializeHandLandmarker() {
+            try {
+                camNoticeMsg.innerText = "Memuatkan Model AI MediaPipe...";
+                
+                // Wait for CDN modules to register on window
+                while (!window.HandLandmarker || !window.FilesetResolver) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
+
+                const vision = await window.FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+                );
+
+                state.handLandmarker = await window.HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                        delegate: "GPU"
+                    },
+                    runningMode: "VIDEO",
+                    numHands: 1
+                });
+
+                camNoticeMsg.innerText = "Model AI Bersedia! Klik untuk mulakan kamera.";
+                btnStartCam.disabled = false;
+            } catch (err) {
+                console.error("Gagal memuatkan MediaPipe Task:", err);
+                camNoticeMsg.innerText = "Gagal memuatkan model pengesanan tangan. Mod papan kekunci sedia digunakan.";
+                setMode(false);
+            }
+        }
+
+        /* Start Webcam Feed */
+        async function startWebcam() {
+            sfx.init();
+            if (!state.handLandmarker) {
+                alert("Model AI pengesanan tangan masih dimuatkan. Sila tunggu sebentar.");
+                return;
+            }
+
+            try {
+                const constraints = {
+                    video: { width: 640, height: 480, facingMode: "user" }
+                };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                video.addEventListener("loadeddata", () => {
+                    state.webcamRunning = true;
+                    camOverlayNotice.classList.add('hidden');
+                    camStatusDot.className = "w-3.5 h-3.5 rounded-full bg-emerald-400 animate-pulse";
+                    camStatusText.innerText = "Kamera Aktif & Pengesanan Arah";
+                    predictWebcamFrame();
+                });
+            } catch (err) {
+                console.error("Kamera Akses Ditolak/Ralat:", err);
+                camNoticeMsg.innerText = "Akses kamera ditolak atau kamera tidak dijumpai. Beralih ke mod Papan Kekunci.";
+                setMode(false);
+            }
+        }
+
+        /* Loop Frame Prediction */
+        async function predictWebcamFrame() {
+            if (!state.webcamRunning) return;
+
+            // Set canvas size matching video aspect
+            if (previewCanvas.width !== video.videoWidth) {
+                previewCanvas.width = video.videoWidth || 320;
+                previewCanvas.height = video.videoHeight || 240;
+            }
+
+            let startTimeMs = performance.now();
+            if (state.lastVideoTime !== video.currentTime) {
+                state.lastVideoTime = video.currentTime;
+                
+                if (state.handLandmarker) {
+                    const results = state.handLandmarker.detectForVideo(video, startTimeMs);
+                    drawPreview(results);
+                }
+            }
+
+            requestAnimationFrame(predictWebcamFrame);
+        }
+
+        /* Render Preview & Calculate Hand Position */
+        function drawPreview(results) {
+            previewCtx.save();
+            previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            
+            // Mirror image draw
+            previewCtx.translate(previewCanvas.width, 0);
+            previewCtx.scale(-1, 1);
+            previewCtx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
+
+            if (results.landmarks && results.landmarks.length > 0) {
+                state.isHandDetected = true;
+                const landmarks = results.landmarks[0];
+
+                // Draw Landmark Joints
+                previewCtx.fillStyle = "#facc15";
+                previewCtx.strokeStyle = "#ffffff";
+                previewCtx.lineWidth = 2;
+
+                for (const lm of landmarks) {
+                    const x = lm.x * previewCanvas.width;
+                    const y = lm.y * previewCanvas.height;
+                    previewCtx.beginPath();
+                    previewCtx.arc(x, y, 4, 0, 2 * Math.PI);
+                    previewCtx.fill();
+                    previewCtx.stroke();
+                }
+
+                // Index Finger Tip (Landmark index 8) or Wrist (Landmark index 0)
+                const palmCenter = landmarks[9]; // Middle MCP joint gives smooth balance
+                // Note: Image is mirrored horizontally, normalize correctly
+                state.handXRatio = 1.0 - palmCenter.x; 
+
+                // Update Visual Calibration Gauge
+                const pct = Math.round(state.handXRatio * 100);
+                handPosBar.style.width = `${pct}%`;
+                handPosLabel.innerText = `Kedudukan: ${pct}%`;
+            } else {
+                state.isHandDetected = false;
+                handPosLabel.innerText = "Tangan Tidak Dikesan";
+            }
+            previewCtx.restore();
+        }
+
+        /* Toggle Mode Switcher */
+        function setMode(useCamera) {
+            state.isCameraMode = useCamera;
+            if (useCamera) {
+                btnToggleMode.innerHTML = `<i class="fa-solid fa-keyboard mr-1"></i> Mod Papan Kekunci`;
+                if (!state.webcamRunning) camOverlayNotice.classList.remove('hidden');
+            } else {
+                btnToggleMode.innerHTML = `<i class="fa-solid fa-video mr-1"></i> Mod Kamera`;
+                camStatusDot.className = "w-3.5 h-3.5 rounded-full bg-blue-400";
+                camStatusText.innerText = "Mod Papan Kekunci ([←] [→])";
+                camOverlayNotice.classList.remove('hidden');
+                camNoticeMsg.innerText = "Mod Papan Kekunci Aktif. Gunakan butang anak panah untuk bergerak.";
+            }
+        }
+
+        btnToggleMode.addEventListener('click', () => {
+            setMode(!state.isCameraMode);
+        });
+
+        btnStartCam.addEventListener('click', () => {
+            startWebcam();
+        });
+
+        /* ===================================================================
+           5. GAME MECHANICS & ENGINE
+           =================================================================== */
+        
+        // Difficulty Selection Event Listeners
+        document.querySelectorAll('.btn-diff').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.btn-diff').forEach(b => {
+                    b.className = "btn-diff px-4 py-2 rounded-xl text-xs font-bold border-2 border-indigo-400/40 bg-indigo-800/40 hover:bg-indigo-700 transition";
+                });
+                btn.className = "btn-diff px-4 py-2 rounded-xl text-xs font-bold border-2 border-yellow-400 bg-yellow-400 text-slate-900 shadow-md";
+                state.difficulty = parseInt(btn.getAttribute('data-diff'));
+                
+                const diffNames = { 1: 'Mudah', 2: 'Sederhana', 3: 'Sukar' };
+                uiDifficulty.innerText = diffNames[state.difficulty];
+            });
+        });
+
+        function startGame() {
+            sfx.init();
+            state.gameActive = true;
+            state.score = 0;
+            state.lives = 3;
+            state.timeRemaining = 60;
+            state.fallingItems = [];
+            state.particles = [];
+            
+            updateHUD();
+            screenStart.classList.add('hidden');
+            screenGameOver.classList.add('hidden');
+
+            // Timer Loop
+            if (window.gameTimerInterval) clearInterval(window.gameTimerInterval);
+            window.gameTimerInterval = setInterval(() => {
+                if (state.gameActive) {
+                    state.timeRemaining--;
+                    uiTime.innerText = `${state.timeRemaining}s`;
+                    if (state.timeRemaining <= 0) {
+                        endGame(true);
+                    }
+                }
+            }, 1000);
+
+            // Item Spawner Interval based on difficulty
+            if (window.spawnInterval) clearInterval(window.spawnInterval);
+            const spawnRate = state.difficulty === 1 ? 1800 : (state.difficulty === 2 ? 1300 : 900);
+            window.spawnInterval = setInterval(() => {
+                if (state.gameActive) spawnItem();
+            }, spawnRate);
+        }
+
+        function endGame(timeUp = false) {
+            state.gameActive = false;
+            clearInterval(window.gameTimerInterval);
+            clearInterval(window.spawnInterval);
+            sfx.playGameOver();
+
+            document.getElementById('finalScore').innerText = state.score;
+            if (timeUp) {
+                document.getElementById('gameOverTitle').innerText = "MASA TAMAT!";
+                document.getElementById('gameOverSub').innerText = "Syabas, anda telah mencuba yang terbaik!";
+            } else {
+                document.getElementById('gameOverTitle').innerText = "NYAWA HABIS!";
+                document.getElementById('gameOverSub').innerText = "Hati-hati semasa memilih Benda Hidup!";
+            }
+            screenGameOver.classList.remove('hidden');
+        }
+
+        function spawnItem() {
+            // Select random item
+            const template = ITEMS_DATABASE[Math.floor(Math.random() * ITEMS_DATABASE.length)];
+            const speedBase = state.difficulty === 1 ? 2.5 : (state.difficulty === 2 ? 4.0 : 6.0);
+            
+            state.fallingItems.push({
+                x: Math.random() * (gameCanvas.width - 80) + 40,
+                y: -40,
+                radius: 30,
+                speed: speedBase + Math.random() * 1.5,
+                data: template
+            });
+        }
+
+        function triggerFeedback(msg, isGood) {
+            feedbackToast.innerText = msg;
+            feedbackToast.className = `pointer-events-none absolute top-10 left-1/2 transform -translate-x-1/2 opacity-100 scale-100 font-extrabold text-xl px-6 py-2 rounded-2xl shadow-xl z-20 transition-all duration-300 ${
+                isGood ? 'bg-emerald-500 text-slate-900 border-2 border-emerald-300' : 'bg-red-500 text-white border-2 border-red-300'
+            }`;
+
+            setTimeout(() => {
+                feedbackToast.classList.add('opacity-0', 'scale-75');
+            }, 800);
+        }
+
+        function spawnParticles(x, y, color) {
+            for (let i = 0; i < 12; i++) {
+                state.particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    radius: Math.random() * 5 + 2,
+                    color: color,
+                    alpha: 1.0
+                });
+            }
+        }
+
+        function updateHUD() {
+            uiScore.innerText = state.score;
+            
+            // Hearts rendering
+            let heartsHtml = '';
+            for (let i = 0; i < 3; i++) {
+                if (i < state.lives) {
+                    heartsHtml += `<i class="fa-solid fa-heart"></i> `;
+                } else {
+                    heartsHtml += `<i class="fa-regular fa-heart opacity-30"></i> `;
+                }
+            }
+            uiLives.innerHTML = heartsHtml;
+        }
+
+        /* Keyboard Listeners */
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.keys.Left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.keys.Right = true;
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.keys.Left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.keys.Right = false;
+        });
+
+        /* ===================================================================
+           6. MAIN CANVAS RENDER LOOP
+           =================================================================== */
+        function gameLoop() {
+            // Clear Canvas
+            gameCtx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+            // Draw Playful Sky/Grass Background
+            drawBackground();
+
+            if (state.gameActive) {
+                // Update Basket Position
+                if (state.isCameraMode && state.isHandDetected) {
+                    // Smooth Interpolation from gesture hand ratio
+                    const targetX = state.handXRatio * gameCanvas.width;
+                    state.basket.x += (targetX - state.basket.x) * 0.2;
+                } else {
+                    // Keyboard Fallback Movement
+                    if (state.keys.Left) state.basket.x -= state.basket.speed;
+                    if (state.keys.Right) state.basket.x += state.basket.speed;
+                }
+
+                // Constrain basket inside canvas bounds
+                state.basket.x = Math.max(state.basket.width / 2, Math.min(gameCanvas.width - state.basket.width / 2, state.basket.x));
+
+                // Update & Render Particles
+                for (let i = state.particles.length - 1; i >= 0; i--) {
+                    const p = state.particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.alpha -= 0.03;
+                    if (p.alpha <= 0) {
+                        state.particles.splice(i, 1);
+                        continue;
+                    }
+                    gameCtx.save();
+                    gameCtx.globalAlpha = p.alpha;
+                    gameCtx.fillStyle = p.color;
+                    gameCtx.beginPath();
+                    gameCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    gameCtx.fill();
+                    gameCtx.restore();
+                }
+
+                // Update & Render Falling Items
+                for (let i = state.fallingItems.length - 1; i >= 0; i--) {
+                    const item = state.fallingItems[i];
+                    item.y += item.speed;
+
+                    // Render Item Bubble
+                    gameCtx.save();
+                    gameCtx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                    gameCtx.shadowBlur = 10;
+                    gameCtx.fillStyle = item.data.color;
+                    gameCtx.beginPath();
+                    gameCtx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+                    gameCtx.fill();
+                    gameCtx.lineWidth = 3;
+                    gameCtx.strokeStyle = '#ffffff';
+                    gameCtx.stroke();
+                    gameCtx.restore();
+
+                    // Render Emoji & Name Label
+                    gameCtx.font = '24px serif';
+                    gameCtx.textAlign = 'center';
+                    gameCtx.textBaseline = 'middle';
+                    gameCtx.fillText(item.data.icon, item.x, item.y - 2);
+
+                    gameCtx.font = 'bold 11px Quicksand';
+                    gameCtx.fillStyle = '#ffffff';
+                    gameCtx.fillText(item.data.name, item.x, item.y + 18);
+
+                    // Check Collision with Basket
+                    const basketTop = state.basket.y - 10;
+                    const basketLeft = state.basket.x - state.basket.width / 2;
+                    const basketRight = state.basket.x + state.basket.width / 2;
+
+                    if (item.y + item.radius >= basketTop && item.y - item.radius <= basketTop + state.basket.height) {
+                        if (item.x >= basketLeft && item.x <= basketRight) {
+                            // CATCH EVENT!
+                            if (item.data.category === state.targetType) {
+                                // Correct Catch!
+                                state.score += 10;
+                                sfx.playCatchGood();
+                                triggerFeedback(`+10 ${item.data.name} (Benda Hidup)!`, true);
+                                spawnParticles(item.x, item.y, '#10b981');
+                            } else {
+                                // Wrong Catch!
+                                state.lives--;
+                                sfx.playCatchBad();
+                                triggerFeedback(`SALAH! ${item.data.name} Benda Bukan Hidup!`, false);
+                                spawnParticles(item.x, item.y, '#ef4444');
+                                if (state.lives <= 0) {
+                                    endGame(false);
+                                }
+                            }
+                            updateHUD();
+                            state.fallingItems.splice(i, 1);
+                            continue;
+                        }
+                    }
+
+                    // Missed Item Off Screen
+                    if (item.y - item.radius > gameCanvas.height) {
+                        // If missed a living thing, penalize slightly or ignore
+                        state.fallingItems.splice(i, 1);
+                    }
+                }
+            }
+
+            // Draw Basket Container
+            drawBasket(state.basket.x, state.basket.y, state.basket.width, state.basket.height);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* Draw Playful Background Graphics */
+        function drawBackground() {
+            // Sky gradient
+            const grad = gameCtx.createLinearGradient(0, 0, 0, gameCanvas.height);
+            grad.addColorStop(0, '#1e293b');
+            grad.addColorStop(0.7, '#312e81');
+            grad.addColorStop(1, '#4338ca');
+            gameCtx.fillStyle = grad;
+            gameCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+            // Distant Cartoon Hills / Grass at bottom
+            gameCtx.fillStyle = '#10b981';
+            gameCtx.beginPath();
+            gameCtx.arc(200, 680, 250, 0, Math.PI * 2);
+            gameCtx.arc(600, 700, 300, 0, Math.PI * 2);
+            gameCtx.fill();
+
+            // Floating Clouds
+            gameCtx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            gameCtx.beginPath();
+            gameCtx.arc(150, 100, 40, 0, Math.PI * 2);
+            gameCtx.arc(190, 90, 55, 0, Math.PI * 2);
+            gameCtx.arc(230, 100, 40, 0, Math.PI * 2);
+            gameCtx.fill();
+        }
+
+        /* Draw Cartoon Basket */
+        function drawBasket(x, y, w, h) {
+            gameCtx.save();
+            
+            // Basket Body Gradient
+            const grad = gameCtx.createLinearGradient(x - w/2, y, x + w/2, y + h);
+            grad.addColorStop(0, '#f59e0b');
+            grad.addColorStop(1, '#b45309');
+
+            gameCtx.fillStyle = grad;
+            gameCtx.beginPath();
+            gameCtx.roundRect(x - w/2, y, w, h, [10, 10, 20, 20]);
+            gameCtx.fill();
+            gameCtx.lineWidth = 4;
+            gameCtx.strokeStyle = '#fef08a';
+            gameCtx.stroke();
+
+            // Weave lines for arcade basket look
+            gameCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            gameCtx.lineWidth = 2;
+            for (let offset = -w/2 + 20; offset < w/2; offset += 20) {
+                gameCtx.beginPath();
+                gameCtx.moveTo(x + offset, y);
+                gameCtx.lineTo(x + offset, y + h);
+                gameCtx.stroke();
+            }
+
+            // Top rim highlight
+            gameCtx.fillStyle = '#fde047';
+            gameCtx.beginPath();
+            gameCtx.roundRect(x - w/2 - 6, y - 6, w + 12, 14, 8);
+            gameCtx.fill();
+
+            gameCtx.restore();
+        }
+
+        /* Buttons Event Bindings */
+        btnPlayGame.addEventListener('click', startGame);
+        btnRestartGame.addEventListener('click', startGame);
+
+        /* Initialize Everything on Window Load */
+        window.onload = () => {
+            initializeHandLandmarker();
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
